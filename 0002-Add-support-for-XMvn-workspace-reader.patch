@@ -1,0 +1,110 @@
+From a1da8d0bfa8da4121a96aec2b3ff45983f1e9e9e Mon Sep 17 00:00:00 2001
+From: Mikolaj Izdebski <mizdebsk@redhat.com>
+Date: Mon, 10 Oct 2016 21:28:25 +0200
+Subject: [PATCH 2/2] Add support for XMvn workspace reader
+
+---
+ pom.xml                                            | 18 +++++++++++
+ .../eclipse/aether/internal/ant/AntRepoSys.java    |  7 +++++
+ .../eclipse/aether/internal/ant/XMvnRepoSys.java   | 35 ++++++++++++++++++++++
+ 3 files changed, 60 insertions(+)
+ create mode 100644 src/main/java/org/eclipse/aether/internal/ant/XMvnRepoSys.java
+
+diff --git a/pom.xml b/pom.xml
+index 915ae45..3948cd3 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -262,6 +262,24 @@
+       </exclusions>
+     </dependency>
+     <dependency>
++      <groupId>org.fedoraproject.xmvn</groupId>
++      <artifactId>xmvn-api</artifactId>
++      <version>2.5.0</version>
++      <scope>provided</scope>
++    </dependency>
++    <dependency>
++      <groupId>org.fedoraproject.xmvn</groupId>
++      <artifactId>xmvn-launcher</artifactId>
++      <version>2.5.0</version>
++      <scope>provided</scope>
++    </dependency>
++    <dependency>
++      <groupId>org.fedoraproject.xmvn</groupId>
++      <artifactId>xmvn-connector-aether</artifactId>
++      <version>2.5.0</version>
++      <scope>provided</scope>
++    </dependency>
++    <dependency>
+       <groupId>junit</groupId>
+       <artifactId>junit</artifactId>
+       <version>4.11</version>
+diff --git a/src/main/java/org/eclipse/aether/internal/ant/AntRepoSys.java b/src/main/java/org/eclipse/aether/internal/ant/AntRepoSys.java
+index 76cc927..bdbd547 100644
+--- a/src/main/java/org/eclipse/aether/internal/ant/AntRepoSys.java
++++ b/src/main/java/org/eclipse/aether/internal/ant/AntRepoSys.java
+@@ -109,6 +109,8 @@ public class AntRepoSys
+ 
+     private static final SettingsDecrypter settingsDecrypter = new AntSettingsDecryptorFactory().newInstance();
+ 
++    private static final XMvnRepoSys xmvnRepoSys = new XMvnRepoSys();
++
+     private final Project project;
+ 
+     private final DefaultServiceLocator locator;
+@@ -234,6 +236,11 @@ public class AntRepoSys
+ 
+         session.setWorkspaceReader( ProjectWorkspaceReader.getInstance() );
+ 
++        if ( project.getProperty( "xmvn.ant.enable" ) != null || System.getProperty( "xmvn.ant.enable" ) != null )
++        {
++            xmvnRepoSys.configureRepositorySession( session );
++        }
++
+         return session;
+     }
+ 
+diff --git a/src/main/java/org/eclipse/aether/internal/ant/XMvnRepoSys.java b/src/main/java/org/eclipse/aether/internal/ant/XMvnRepoSys.java
+new file mode 100644
+index 0000000..bdef3e2
+--- /dev/null
++++ b/src/main/java/org/eclipse/aether/internal/ant/XMvnRepoSys.java
+@@ -0,0 +1,35 @@
++package org.eclipse.aether.internal.ant;
++
++import java.nio.file.Paths;
++
++import org.eclipse.aether.DefaultRepositorySystemSession;
++import org.eclipse.aether.repository.WorkspaceReader;
++import org.eclipse.aether.util.repository.ChainedWorkspaceReader;
++import org.fedoraproject.xmvn.connector.aether.XMvnWorkspaceReader;
++import org.fedoraproject.xmvn.locator.IsolatedXMvnServiceLocator;
++import org.fedoraproject.xmvn.locator.XMvnHomeClassLoader;
++import org.fedoraproject.xmvn.resolver.Resolver;
++
++class XMvnRepoSys
++{
++    private final WorkspaceReader xmvnWorkspaceReader;
++
++    public XMvnRepoSys()
++    {
++        ClassLoader antClassLoader = AntRepoSys.class.getClassLoader();
++
++        XMvnHomeClassLoader xmvnClassLoader = new XMvnHomeClassLoader( antClassLoader );
++        xmvnClassLoader.addJar( Paths.get( "/usr/share/java/slf4j/api.jar" ) );
++        xmvnClassLoader.addJar( Paths.get( "/usr/share/java/slf4j/simple.jar" ) );
++
++        IsolatedXMvnServiceLocator serviceLocator = new IsolatedXMvnServiceLocator( xmvnClassLoader );
++        Resolver resolver = serviceLocator.getService( Resolver.class );
++
++        xmvnWorkspaceReader = new XMvnWorkspaceReader( resolver );
++    }
++
++    public void configureRepositorySession( DefaultRepositorySystemSession session )
++    {
++        session.setWorkspaceReader( new ChainedWorkspaceReader( session.getWorkspaceReader(), xmvnWorkspaceReader ) );
++    }
++}
+-- 
+2.7.4
+
